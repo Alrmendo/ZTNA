@@ -1,0 +1,68 @@
+# Scenario A (North-South) — AFTER — staff-user -> /admin qua Pomerium (DENY-case)
+
+Timestamp (UTC): 2026-08-16T16:52:06Z
+
+## Cách lấy identity/session
+
+Giống hệt quy trình automate OIDC Authorization Code flow mô tả trong
+scenario-a-admin-user-allow.txt (GET kích hoạt redirect chain tới trang
+login Keycloak thật -> parse form action URL -> POST username/password
+thật của staff-user, giữ session qua cookie jar). staff-user là identity
+HỢP LỆ trong Keycloak (đăng nhập thành công), chỉ khác role (`staff`
+thay vì `admin`). Response cuối cùng là response THẬT của route /admin
+sau khi Pomerium đã xác thực xong danh tính staff-user và evaluate
+policy — không bypass Pomerium.
+
+## Request cuối cùng gửi tới Pomerium (rút gọn)
+
+```
+$ curl -sk -i -b cookies.txt -c cookies.txt -L \
+    --data-urlencode "username=staff-user" \
+    --data-urlencode "password=StaffPass123!" \
+    --data-urlencode "credentialId=" \
+    "http://keycloak.iam.svc.cluster.local:8080/realms/crm/login-actions/authenticate?session_code=...&execution=...&client_id=pomerium&tab_id=...&client_data=..."
+```
+
+## Status code qua từng hop (curl -L, cùng 1 lệnh)
+
+```
+HTTP/1.1 302 Found   <- Keycloak: login thành công (staff-user LÀ identity hợp lệ), redirect kèm auth code
+HTTP/2 302           <- Pomerium /oauth2/callback: đổi code lấy token, set session
+HTTP/2 302           <- Pomerium /.pomerium/sign_in
+HTTP/2 302           <- Pomerium /.pomerium/callback/
+HTTP/2 403           <- Route /admin: FAIL policy (role != admin)
+```
+
+## Response cuối cùng (từ Pomerium, route /admin)
+
+```
+HTTP/2 403
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: text/html; charset=UTF-8
+x-pomerium-intercepted-response: true
+status: 403 Forbidden
+
+window.POMERIUM_DATA = {"status":403,"statusText":"Forbidden", ...}
+```
+
+## Đối chiếu độc lập — Pomerium authorize log
+
+```
+{"service":"authorize","path":"/admin","host":"admin.gateway.svc.cluster.local:8080",
+ "session-id":"21f997ac-f096-9128-6415-e3b6785d43b1",
+ "user":"fe300e8c-ed20-4feb-98c6-66d4b261ff61",
+ "email":"staff-user@ztna-lab.local",
+ "allow":false,"allow-why-false":["claim-unauthorized"],
+ "deny":false,"deny-why-false":[],
+ "time":"2026-08-16T16:52:06Z","message":"authorize check"}
+```
+
+=> Pomerium xác nhận: đúng identity staff-user@ztna-lab.local (đăng nhập
+thành công, KHÔNG phải bị chặn vì sai mật khẩu), nhưng claim policy FAIL
+-> allow: false, lý do "claim-unauthorized" (role không phải admin).
+
+## Kết quả
+
+Kỳ vọng: DENIED (~403). Thực tế: **403 Forbidden** (từ Pomerium, không
+phải từ admin-service). PASS.

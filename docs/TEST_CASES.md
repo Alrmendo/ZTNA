@@ -26,9 +26,13 @@
 
 ### AFTER — Pomerium identity-aware access control (test qua GĐ4)
 
-- [ ] Guest → `/admin` → kỳ vọng **DENIED (~403)** — evidence: HTTP response + Pomerium log
-- [ ] Staff → `/admin` → kỳ vọng **DENIED (~403)** — evidence: HTTP response + Pomerium log
-- [ ] Admin → `/admin` → kỳ vọng **ALLOWED (~200)** — evidence: HTTP response
+> Test qua OIDC Authorization Code flow thật (script curl tự động login
+> Keycloak, giữ session qua cookie jar), không bypass Pomerium. Chi tiết
+> cách automate xem `infra/pomerium/README.md`.
+
+- [x] Guest → `/admin` → kỳ vọng **DENIED (~403)** — thực tế: **403 Forbidden** (Pomerium, `allow-why-false: claim-unauthorized`) — evidence: [gd4-after/scenario-a-guest-user-deny.txt](./evidence/gd4-after/scenario-a-guest-user-deny.txt)
+- [x] Staff → `/admin` → kỳ vọng **DENIED (~403)** — thực tế: **403 Forbidden** (Pomerium, `allow-why-false: claim-unauthorized`) — evidence: [gd4-after/scenario-a-staff-user-deny.txt](./evidence/gd4-after/scenario-a-staff-user-deny.txt)
+- [x] Admin → `/admin` → kỳ vọng **ALLOWED (~200)** — thực tế: **200 ALLOWED** (Pomerium, `allow-why-true: claim-ok`) — evidence: [gd4-after/scenario-a-admin-user-allow.txt](./evidence/gd4-after/scenario-a-admin-user-allow.txt)
 
 ---
 

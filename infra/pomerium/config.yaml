@@ -1,0 +1,35 @@
+# Pomerium ZTNA gateway (North-South) — GĐ4.
+#
+# LAB-ONLY: TLS dùng cert self-signed tạo sẵn trong tls-lab-only/ (không
+# phải CA công cộng) — Pomerium (bản mới) bắt buộc route phải là HTTPS
+# thật, "insecure_server" chỉ bỏ qua ACME chứ không bỏ được TLS. Do đó
+# curl test phải dùng cờ -k (bỏ qua verify CA); điều này KHÔNG ảnh hưởng
+# tới việc Pomerium có kiểm tra identity/role thật hay không — đó là 2 lớp
+# độc lập (transport trust vs. identity enforcement). Không dùng cert này
+# ngoài lab.
+address: ":8080"
+certificate_file: /etc/pomerium/tls/tls.crt
+certificate_key_file: /etc/pomerium/tls/tls.key
+
+# authenticate_service_url PHẢI khác domain với các route bên dưới — đây
+# là domain riêng nơi Pomerium xử lý OIDC redirect/callback. Trỏ tới
+# Service "pomerium" (namespace gateway).
+authenticate_service_url: https://pomerium.gateway.svc.cluster.local:8080
+
+idp_provider: oidc
+idp_provider_url: http://keycloak.iam.svc.cluster.local:8080/realms/crm
+idp_client_id: pomerium
+idp_scopes:
+  - openid
+  - profile
+  - email
+
+# Chỉ 1 route duy nhất ở GĐ4: /admin -> admin-service, chỉ role "admin"
+# (theo realm_access.roles từ Keycloak) mới được ALLOW. guest/staff bị DENY.
+routes:
+  - from: https://admin.gateway.svc.cluster.local:8080
+    to: http://admin-service.crm.svc.cluster.local
+    policy:
+      - allow:
+          or:
+            - claim/realm_access.roles: admin

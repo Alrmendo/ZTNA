@@ -1,0 +1,91 @@
+# Scenario A (North-South) — AFTER — admin-user -> /admin qua Pomerium (ALLOW-case)
+
+Timestamp (UTC): 2026-08-16T16:51:49Z
+
+## Cách lấy identity/session (automate OIDC Authorization Code flow)
+
+Không dùng browser thật. Dùng curl từ 1 pod debug trong namespace `gateway`
+(cùng cluster với Pomerium), script hoá lại đúng flow mà browser thật sẽ
+làm, giữ session qua cookie jar (-b/-c cùng 1 file qua các bước):
+
+1. GET https://admin.gateway.svc.cluster.local:8080/admin (chưa có session)
+   -> Pomerium 302 tới chính nó (/.pomerium/sign_in) -> 302 tới Keycloak
+   authorization endpoint -> Keycloak 200 trả HTML trang login thật, kèm
+   cookie AUTH_SESSION_ID/KC_RESTART. Toàn bộ chain này curl tự follow
+   bằng -L trong 1 lệnh, cookie ghi vào cookie jar bằng -c.
+2. Parse thuộc tính `action="..."` của thẻ `<form>` trong HTML login (URL
+   login-actions/authenticate kèm session_code/execution/tab_id do
+   Keycloak sinh ra cho đúng phiên này) — dùng regex, không dùng thư viện
+   ngoài.
+3. POST username=admin-user, password=AdminPass123! (credential thật của
+   user trong Keycloak, xem infra/keycloak/realm-export.json) tới URL vừa
+   parse, dùng LẠI cookie jar ở bước 1 (-b) và tiếp tục ghi (-c), -L để
+   follow: Keycloak xác thực -> 302 kèm authorization code về Pomerium
+   /oauth2/callback -> Pomerium đổi code lấy token với Keycloak (server-
+   to-server, không thấy trên client) -> Pomerium set session cookie riêng
+   -> 302 về lại /admin ban đầu -> route /admin trả response CUỐI CÙNG.
+
+=> Response cuối cùng là response THẬT của route /admin sau khi đã đi
+qua toàn bộ OIDC flow và policy evaluation của Pomerium — không bypass
+Pomerium, không gọi thẳng admin-service.
+
+## Request cuối cùng gửi tới Pomerium (bước 3, rút gọn)
+
+```
+$ curl -sk -i -b cookies.txt -c cookies.txt -L \
+    --data-urlencode "username=admin-user" \
+    --data-urlencode "password=AdminPass123!" \
+    --data-urlencode "credentialId=" \
+    "http://keycloak.iam.svc.cluster.local:8080/realms/crm/login-actions/authenticate?session_code=...&execution=...&client_id=pomerium&tab_id=...&client_data=..."
+```
+
+## Status code qua từng hop (curl -L, cùng 1 lệnh)
+
+```
+HTTP/1.1 302 Found   <- Keycloak: login thành công, redirect kèm auth code
+HTTP/2 302           <- Pomerium /oauth2/callback: đổi code lấy token, set session, redirect
+HTTP/2 302           <- Pomerium /.pomerium/sign_in (hoàn tất, redirect về route gốc)
+HTTP/2 302           <- Pomerium /.pomerium/callback/ (route domain, set cookie route-scope)
+HTTP/2 200           <- Route /admin: PASS qua policy (role=admin)
+```
+
+## Response cuối cùng (từ route /admin)
+
+```
+HTTP/2 200
+x-powered-by: Express
+content-type: application/json; charset=utf-8
+content-length: 45
+etag: W/"2d-UqABvjsd7tVHzgb9uOiYTC1TN3c"
+date: Sun, 16 Aug 2026 16:51:49 GMT
+x-envoy-upstream-service-time: 0
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+server: envoy
+x-request-id: 409412c4-f239-44ba-93f9-6cfd7a7a6e8d
+
+{"panel":"admin","users":42,"revenue":123456}
+```
+
+## Đối chiếu độc lập — Pomerium authorize log (server-side, không thể giả)
+
+```
+{"service":"authorize","path":"/admin","host":"admin.gateway.svc.cluster.local:8080",
+ "session-id":"8163012a-8cca-0150-98cd-92410645184b",
+ "user":"91776294-bc07-423f-833e-dfea69e3a8a9",
+ "email":"admin-user@ztna-lab.local",
+ "allow":true,"allow-why-true":["claim-ok"],
+ "deny":false,"deny-why-false":[],
+ "time":"2026-08-16T16:51:49Z","message":"authorize check"}
+```
+
+=> Pomerium tự xác nhận: đúng email admin-user@ztna-lab.local, policy
+claim (`realm_access.roles` chứa "admin") evaluate ĐÚNG -> allow: true,
+lý do "claim-ok". Đây là bằng chứng độc lập với response HTTP, không thể
+làm giả bằng cách bypass gateway.
+
+## Kết quả
+
+Kỳ vọng: ALLOWED (~200). Thực tế: **200 ALLOWED** (đúng admin panel data
+`admin-service` trả về). PASS.

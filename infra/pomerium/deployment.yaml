@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pomerium
+  labels:
+    app: pomerium
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pomerium
+  template:
+    metadata:
+      labels:
+        app: pomerium
+    spec:
+      containers:
+        - name: pomerium
+          image: pomerium/pomerium:latest
+          args: ["-config", "/etc/pomerium/config.yaml"]
+          envFrom:
+            - secretRef:
+                name: pomerium-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pomerium
+              readOnly: true
+            - name: tls
+              mountPath: /etc/pomerium/tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: pomerium-config
+        - name: tls
+          secret:
+            secretName: pomerium-tls
+---
+# Service dùng làm authenticate_service_url (domain riêng cho OIDC
+# redirect/callback, tách khỏi domain của route /admin bên dưới).
+apiVersion: v1
+kind: Service
+metadata:
+  name: pomerium
+spec:
+  type: ClusterIP
+  selector:
+    app: pomerium
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# Service dùng làm "from" domain của route /admin. Cùng trỏ tới pod
+# Pomerium (Pomerium tự định tuyến theo Host header của request, không
+# theo Service nào nhận traffic) — DNS riêng để tách domain khỏi
+# authenticate_service_url như Pomerium yêu cầu.
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin
+spec:
+  type: ClusterIP
+  selector:
+    app: pomerium
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
