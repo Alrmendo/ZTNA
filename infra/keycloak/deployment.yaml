@@ -1,0 +1,69 @@
+# Keycloak chạy ở DEV MODE (start-dev) — chỉ dùng cho lab demo ZTNA.
+# KHÔNG phải cấu hình production: không TLS, dùng H2 in-memory DB
+# (mặc định của start-dev, dữ liệu mất khi pod restart), admin
+# credential đơn giản để tiện test. Không dùng ngoài môi trường lab này.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:latest
+          args: ["start-dev", "--import-realm"]
+          env:
+            # Admin console credential — lab-only, không dùng production.
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            # Keycloak quét toàn bộ *.json trong thư mục này khi có --import-realm.
+            - name: realm-config
+              mountPath: /opt/keycloak/data/import
+      volumes:
+        - name: realm-config
+          configMap:
+            name: keycloak-realm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

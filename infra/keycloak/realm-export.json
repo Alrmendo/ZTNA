@@ -1,0 +1,61 @@
+{
+  "realm": "crm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "guest", "description": "Guest role - minimal access (ZTNA lab)" },
+      { "name": "staff", "description": "Staff role (ZTNA lab)" },
+      { "name": "admin", "description": "Admin role (ZTNA lab)" }
+    ]
+  },
+  "users": [
+    {
+      "username": "guest-user",
+      "enabled": true,
+      "email": "guest-user@ztna-lab.local",
+      "emailVerified": true,
+      "firstName": "Guest",
+      "lastName": "Lab",
+      "credentials": [
+        { "type": "password", "value": "GuestPass123!", "temporary": false }
+      ],
+      "realmRoles": ["guest"]
+    },
+    {
+      "username": "staff-user",
+      "enabled": true,
+      "email": "staff-user@ztna-lab.local",
+      "emailVerified": true,
+      "firstName": "Staff",
+      "lastName": "Lab",
+      "credentials": [
+        { "type": "password", "value": "StaffPass123!", "temporary": false }
+      ],
+      "realmRoles": ["staff"]
+    },
+    {
+      "username": "admin-user",
+      "enabled": true,
+      "email": "admin-user@ztna-lab.local",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Lab",
+      "credentials": [
+        { "type": "password", "value": "AdminPass123!", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "admin-cli",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false
+    }
+  ]
+}
