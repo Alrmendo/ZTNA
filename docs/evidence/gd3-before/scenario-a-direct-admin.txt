@@ -1,0 +1,26 @@
+# Scenario A (North-South) — BEFORE — Guest/Staff/Admin -> /admin (no identity)
+
+Timestamp (UTC): 2026-08-16T16:17:29Z
+
+Context: Pomerium CHUA duoc deploy trong cluster (xac nhan: khong co namespace/resource
+pomerium nao ton tai). Goi thang toi admin-service qua DNS noi bo cua K8s, khong gan bat
+ky token/Authorization header nao. Vi hien tai KHONG co co che nao gan identity vao request,
+ket qua nay dai dien cho ca 3 actor (Guest, Staff, Admin) o trang thai BEFORE: khong ai bi
+phan biet vi khong co gateway nao kiem tra identity.
+
+Command:
+$ kubectl -n crm exec curltest -- curl -s -i http://admin-service.crm.svc.cluster.local/admin
+
+Full response (headers + body):
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 45
+ETag: W/"2d-UqABvjsd7tVHzgb9uOiYTC1TN3c"
+Date: Sun, 16 Aug 2026 16:17:29 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"panel":"admin","users":42,"revenue":123456}
+```

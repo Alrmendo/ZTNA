@@ -1,0 +1,29 @@
+# Scenario B (East-West) — BEFORE — user-service -> admin-service (lateral movement)
+
+Timestamp (UTC): 2026-08-16T16:18:02Z
+
+Context: Istio CHUA duoc cai trong cluster (xac nhan: khong co namespace istio-system,
+khong co Istio CRD nao). Goi POST toi endpoint gia lap 'user-service bi compromise' tren
+chinh user-service; user-service se tu goi HTTP noi bo sang admin-service (ngoai pham vi
+nghiep vu cua no) va forward nguyen status code + body nhan duoc ve response nay.
+
+Command:
+$ kubectl -n crm exec curltest -- curl -s -i -X POST http://user-service.crm.svc.cluster.local/simulate/call-admin
+
+Full response (headers + body) - day la status/body ma admin-service tra ve cho user-service:
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 45
+ETag: W/"2d-UqABvjsd7tVHzgb9uOiYTC1TN3c"
+Date: Sun, 16 Aug 2026 16:18:03 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"panel":"admin","users":42,"revenue":123456}
+```
+
+=> Van de can khac phuc: user-service (bi compromise, khong lien quan gi admin-service)
+van goi duoc thang toi admin-service va nhan du du lieu admin panel. Day la lateral movement
+thanh cong, se duoc chan o GD5 bang Istio AuthorizationPolicy (restrict-admin-service).

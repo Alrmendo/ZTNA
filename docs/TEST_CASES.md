@@ -16,9 +16,13 @@
 
 ### BEFORE — chưa deploy Pomerium (test qua GĐ3)
 
-- [ ] Guest → `/admin` → kỳ vọng **ALLOWED (~200)** — evidence: HTTP response + Pomerium log
-- [ ] Staff → `/admin` → kỳ vọng **ALLOWED (~200)** — evidence: HTTP response + Pomerium log
-- [ ] Admin → `/admin` → kỳ vọng **ALLOWED (~200)** — evidence: HTTP response
+> Vì Pomerium chưa tồn tại, không có cơ chế nào gắn identity vào request — gọi thẳng
+> `/admin` không kèm token nào đại diện đúng cho cả 3 actor (Guest/Staff/Admin), vì
+> không ai bị phân biệt ở trạng thái này. Cả 3 dòng dùng chung 1 evidence file.
+
+- [x] Guest → `/admin` → kỳ vọng **ALLOWED (~200)** — thực tế: **200 ALLOWED** — evidence: [gd3-before/scenario-a-direct-admin.txt](./evidence/gd3-before/scenario-a-direct-admin.txt)
+- [x] Staff → `/admin` → kỳ vọng **ALLOWED (~200)** — thực tế: **200 ALLOWED** — evidence: [gd3-before/scenario-a-direct-admin.txt](./evidence/gd3-before/scenario-a-direct-admin.txt)
+- [x] Admin → `/admin` → kỳ vọng **ALLOWED (~200)** — thực tế: **200 ALLOWED** — evidence: [gd3-before/scenario-a-direct-admin.txt](./evidence/gd3-before/scenario-a-direct-admin.txt)
 
 ### AFTER — Pomerium identity-aware access control (test qua GĐ4)
 
@@ -32,8 +36,8 @@
 
 ### BEFORE — chưa cài Istio/AuthorizationPolicy (test qua GĐ3)
 
-- [ ] `user-service` → `order-service` → kỳ vọng **ALLOWED (~200)** — đúng phạm vi nghiệp vụ — evidence: Service log
-- [ ] `user-service` → `admin-service` → kỳ vọng **ALLOWED (~200)** — lateral movement thành công (vấn đề cần khắc phục) — evidence: Istio policy log
+- [x] `user-service` → `order-service` → kỳ vọng **ALLOWED (~200)** — đúng phạm vi nghiệp vụ — thực tế: **200 ALLOWED** — evidence: [gd3-before/scenario-b-user-to-order.txt](./evidence/gd3-before/scenario-b-user-to-order.txt)
+- [x] `user-service` → `admin-service` → kỳ vọng **ALLOWED (~200)** — lateral movement thành công (vấn đề cần khắc phục) — thực tế: **200 ALLOWED** — evidence: [gd3-before/scenario-b-user-to-admin.txt](./evidence/gd3-before/scenario-b-user-to-admin.txt)
 
 ### AFTER — Istio mTLS + AuthorizationPolicy (test qua GĐ5)
 

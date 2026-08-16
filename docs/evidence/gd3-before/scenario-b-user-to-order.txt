@@ -1,0 +1,25 @@
+# Scenario B (East-West) — BEFORE — user-service -> order-service
+
+Timestamp (UTC): 2026-08-16T16:17:46Z
+
+Context: Istio CHUA duoc cai trong cluster (xac nhan: khong co namespace istio-system,
+khong co Istio CRD nao). Goi POST toi endpoint gia lap 'user-service bi compromise' tren
+chinh user-service; user-service se tu goi HTTP noi bo sang order-service va forward
+nguyen status code + body nhan duoc ve response nay.
+
+Command:
+$ kubectl -n crm exec curltest -- curl -s -i -X POST http://user-service.crm.svc.cluster.local/simulate/call-order
+
+Full response (headers + body) - day la status/body ma order-service tra ve cho user-service:
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 78
+ETag: W/"4e-aR0DEvJ7pF9nP79wgrjU5AANlyM"
+Date: Sun, 16 Aug 2026 16:17:46 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"orders":[{"id":1,"item":"Widget","qty":3},{"id":2,"item":"Gadget","qty":1}]}
+```
