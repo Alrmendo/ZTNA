@@ -1,0 +1,5 @@
+label,n,mean_ms,median_ms,p95_ms,min_ms,max_ms
+a_order_raw,50,2.96,2.83,3.83,2.35,6.29
+b_order_eastwest_after,50,6.00,5.70,7.90,4.84,15.49
+c_admin_raw,50,2.02,1.96,2.39,1.78,2.84
+d_admin_northsouth_after,50,12.02,11.53,14.28,10.45,24.48
