@@ -1,0 +1,72 @@
+# Scenario B (East-West) — AFTER — user-service -> order-service (ALLOW-case)
+
+Timestamp (UTC): 2026-08-17T16:20:59Z
+
+Context: Istio đã cài (istiod Running, namespace istio-system), namespace
+crm bật sidecar injection (3 pod 2/2), PeerAuthentication STRICT áp cho
+crm, 3 AuthorizationPolicy đã apply (allow-user-to-order,
+restrict-admin-service, allow-pomerium-ingress-to-admin — xem
+infra/istio/). Cùng phương pháp đo với GĐ3: POST tới endpoint giả lập
+"user-service bị compromise" trên chính user-service; user-service tự
+gọi HTTP nội bộ sang order-service, forward nguyên status/body nhận
+được về response này.
+
+## Sự cố phát hiện khi verify (nguyên tắc mục 9 — test ALLOW-case)
+
+Lần chạy đầu tiên trả về 403 dù đây là traffic hợp lệ. Nguyên nhân: policy
+allow-user-to-order trong PLAN.md dùng `paths: ["/api/orders/*"]` — prefix
+match yêu cầu dấu "/" theo sau "/api/orders" — nhưng route thật của
+order-service (services/order-service/index.js) là đúng "/api/orders"
+(không có dấu "/" theo sau). Envoy access log xác nhận:
+
+```
+[2026-08-17T16:18:24.591Z] "GET /api/orders HTTP/1.1" 403 - rbac_access_denied_matched_policy[none] ...
+```
+
+Khắc phục: sửa policy thành `paths: ["/api/orders", "/api/orders/*"]`
+(thêm exact-match, giữ nguyên prefix-match cho sub-path tương lai) — xem
+docs/NOTES.md. Sau khi sửa và đợi config propagate tới Envoy (~1-2s), test
+lại cho kết quả đúng kỳ vọng.
+
+## Command
+
+```
+$ kubectl -n crm exec curltest -- curl -s -i -X POST http://user-service.crm.svc.cluster.local/simulate/call-order
+```
+
+## Full response (headers + body)
+
+```
+HTTP/1.1 200 OK
+x-powered-by: Express
+content-type: application/json; charset=utf-8
+content-length: 78
+etag: W/"4e-aR0DEvJ7pF9nP79wgrjU5AANlyM"
+date: Mon, 17 Aug 2026 16:20:59 GMT
+x-envoy-upstream-service-time: 8
+server: envoy
+
+{"orders":[{"id":1,"item":"Widget","qty":3},{"id":2,"item":"Gadget","qty":1}]}
+```
+
+## Đối chiếu độc lập — order-service istio-proxy (Envoy) RBAC debug log
+
+```
+ssl: uriSanPeerCertificate: spiffe://cluster.local/ns/crm/sa/user-service, ...
+':path', '/api/orders'
+...
+enforced allowed, matched policy ns[crm]-policy[allow-user-to-order]-rule[0]
+allowed by default or by policy
+[2026-08-17T16:20:42.596Z] "GET /api/orders HTTP/1.1" 200 - via_upstream ...
+```
+
+=> Envoy tự xác nhận: request tới order-service mang identity mTLS
+`spiffe://cluster.local/ns/crm/sa/user-service` (đúng ServiceAccount
+user-service, không phải "default"), khớp đúng policy
+`allow-user-to-order` rule[0] -> allowed. Đây là bằng chứng độc lập với
+response HTTP.
+
+## Kết quả
+
+Kỳ vọng: ALLOWED (~200), vẫn trong phạm vi least-privilege. Thực tế:
+**200 ALLOWED**. PASS.

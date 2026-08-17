@@ -1,3 +1,9 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-service
+  namespace: crm
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +21,7 @@ spec:
       labels:
         app: user-service
     spec:
+      serviceAccountName: user-service
       containers:
         - name: user-service
           image: user-service:local
@@ -44,5 +51,6 @@ spec:
   selector:
     app: user-service
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 3000

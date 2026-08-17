@@ -1,0 +1,81 @@
+# AuthorizationPolicy East-West — nguyên văn theo PLAN.md mục 4 (GĐ5).
+
+# Policy 1 — gắn vào order-service (selector = destination thật sự)
+# Cho phép user-service gọi tới order-service.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-user-to-order
+  namespace: crm
+spec:
+  selector:
+    matchLabels:
+      app: order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/crm/sa/user-service"]
+      to:
+        - operation:
+            # PLAN.md mục 4 chỉ ghi "/api/orders/*" (prefix match, yêu cầu
+            # dấu "/" theo sau) — order-service (services/order-service/
+            # index.js) chỉ có đúng 1 route "/api/orders" (không có dấu
+            # "/" theo sau, không có sub-resource nào). "/api/orders/*"
+            # do đó KHÔNG match route thật, khiến test ALLOW-case (mục 9)
+            # trả 403 sai kỳ vọng — phát hiện khi verify GD5, xem
+            # docs/NOTES.md. Thêm match "/api/orders" (exact) để khớp
+            # đúng route thật, vẫn giữ "/api/orders/*" cho sub-path tương
+            # lai, không mở rộng phạm vi ngoài ý định ban đầu của policy.
+            paths: ["/api/orders", "/api/orders/*"]
+---
+# Policy 2 — gắn vào admin-service (selector = destination thật sự)
+# admin-service KHÔNG cần được gọi bởi bất kỳ service nào khác trong
+# scope hiện tại (chỉ được truy cập qua Pomerium ở tầng North-South).
+# action: ALLOW + rules rỗng => deny-all cho mọi service-to-service traffic.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: restrict-admin-service
+  namespace: crm
+spec:
+  selector:
+    matchLabels:
+      app: admin-service
+  action: ALLOW
+  rules: []
+---
+# Policy 3 — BỔ SUNG ngoài PLAN.md gốc, thêm ở GĐ5 bước 5 để sửa regression
+# trên Scenario A (xem docs/NOTES.md để biết đầy đủ lý do).
+#
+# restrict-admin-service ở trên (rules: []) là deny-all tuyệt đối — không
+# phân biệt được traffic East-West trái phép (user-service gọi thẳng) với
+# traffic North-South hợp lệ đi qua Pomerium (ZTNA gateway), vì cả hai đều
+# là "request tới sidecar admin-service" dưới góc nhìn của Istio. Áp
+# nguyên văn 2 policy PLAN.md sẽ chặn nhầm luôn cả đường vào hợp lệ của
+# Pomerium.
+#
+# Vì AuthorizationPolicy nhiều ALLOW cho cùng 1 selector được OR với nhau,
+# policy này KHÔNG sửa/nới lỏng rules: [] ở trên (restrict-admin-service
+# vẫn giữ nguyên, vẫn chặn tuyệt đối mọi service-to-service call, kể cả
+# user-service) — mà bổ sung một lối ALLOW tách biệt, least-privilege,
+# chỉ định danh đúng 1 principal (cluster.local/ns/gateway/sa/pomerium)
+# và đúng 1 path (/admin), phản ánh đúng vai trò ZTNA gateway của Pomerium
+# ở tầng North-South, không phải một "service" ngang hàng trong crm.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-pomerium-ingress-to-admin
+  namespace: crm
+spec:
+  selector:
+    matchLabels:
+      app: admin-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/gateway/sa/pomerium"]
+      to:
+        - operation:
+            paths: ["/admin"]

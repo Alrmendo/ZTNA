@@ -45,8 +45,12 @@
 
 ### AFTER — Istio mTLS + AuthorizationPolicy (test qua GĐ5)
 
-- [ ] `user-service` → `order-service` → kỳ vọng **ALLOWED (~200)** — vẫn trong phạm vi least-privilege — evidence: Service log
-- [ ] `user-service` → `admin-service` → kỳ vọng **DENIED (~403)** — chặn bởi AuthorizationPolicy — evidence: Istio policy log
+- [x] `user-service` → `order-service` → kỳ vọng **ALLOWED (~200)** — vẫn trong phạm vi least-privilege — thực tế: **200 ALLOWED** — evidence: [gd5-after/scenario-b-user-to-order-allow.txt](./evidence/gd5-after/scenario-b-user-to-order-allow.txt)
+- [x] `user-service` → `admin-service` → kỳ vọng **DENIED (~403)** — chặn bởi AuthorizationPolicy — thực tế: **403 Forbidden** (Istio RBAC, `rbac_access_denied_matched_policy[none]`, body "RBAC: access denied") — evidence: [gd5-after/scenario-b-user-to-admin-deny.txt](./evidence/gd5-after/scenario-b-user-to-admin-deny.txt)
+
+### Regression check — Scenario A sau GĐ5 (bắt buộc theo yêu cầu triển khai GĐ5)
+
+- [x] Admin → `/admin` qua Pomerium, sau khi Istio mTLS STRICT + AuthorizationPolicy được áp cho `crm` → kỳ vọng **vẫn ALLOWED (~200)**, không bị GĐ5 phá vỡ — thực tế: **200 ALLOWED** — evidence: [gd5-after/scenario-a-admin-regression-check.txt](./evidence/gd5-after/scenario-a-admin-regression-check.txt) — chi tiết sự cố + cách khắc phục: [NOTES.md](./NOTES.md)
 
 ---
 

@@ -1,0 +1,3 @@
+# istioctl binaries downloaded locally for GĐ5 (Istio) — không commit vì
+# quá lớn (100MB+/file) và tái tạo được qua README.
+.tools/

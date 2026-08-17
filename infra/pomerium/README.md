@@ -72,3 +72,37 @@ log `kubectl -n gateway logs deploy/pomerium` (dòng
 `allow-why-false`) — nguồn bằng chứng độc lập với response HTTP.
 
 Chi tiết đầy đủ 3 test (admin/guest/staff) xem `docs/evidence/gd4-after/`.
+
+## Cập nhật GĐ5 — Pomerium tham gia Istio mesh
+
+Sau khi GĐ5 áp PeerAuthentication STRICT cho namespace `crm`, Pomerium
+(gọi `admin-service.crm.svc.cluster.local` bằng plaintext HTTP) không
+còn kết nối được nếu đứng ngoài mesh. Đã xử lý:
+
+- ServiceAccount riêng `pomerium` (thay vì `default`) trong namespace
+  `gateway` — cho identity mTLS `cluster.local/ns/gateway/sa/pomerium`.
+- Namespace `gateway` bật `istio-injection=enabled` — Pomerium có sidecar.
+- Port 8080 (nơi Pomerium tự terminate TLS bằng cert riêng) đổi tên
+  thành `https` (thay vì `http`) VÀ loại khỏi INBOUND interception qua
+  annotation `traffic.sidecar.istio.io/excludeInboundPorts: "8080"` —
+  biên TLS North-South (Pomerium tự terminate cho user/browser bên
+  ngoài) tách biệt khỏi mTLS East-West nội bộ mesh. OUTBOUND (Pomerium ->
+  admin-service) vẫn qua sidecar để tự động mTLS.
+- 1 AuthorizationPolicy bổ sung (`allow-pomerium-ingress-to-admin`,
+  `infra/istio/authorization-policies.yaml`) cho phép đúng principal
+  `cluster.local/ns/gateway/sa/pomerium` gọi `/admin` — vì
+  `restrict-admin-service` (rules: []) chặn tuyệt đối, kể cả Pomerium,
+  nếu không có policy riêng này.
+
+Lý do đầy đủ + quá trình debug: xem `docs/NOTES.md`. Deploy qua kustomize
+như cũ:
+
+```
+kubectl apply -k infra/pomerium/
+```
+
+(Lưu ý: đừng dùng `kubectl apply -f infra/pomerium/deployment.yaml` trực
+tiếp — file này không tự khai báo `namespace: gateway`, dựa vào
+kustomize để inject namespace + tạo ConfigMap/Secret có hash suffix từ
+`config.yaml`/`tls-lab-only/`. Áp trực tiếp bằng `-f` sẽ tạo nhầm tài
+nguyên trong namespace `default` và không cập nhật được bản đang chạy.)

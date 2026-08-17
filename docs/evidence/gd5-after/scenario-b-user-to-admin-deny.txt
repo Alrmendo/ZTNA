@@ -1,0 +1,66 @@
+# Scenario B (East-West) — AFTER — user-service -> admin-service (DENY-case, lateral movement)
+
+Timestamp (UTC): 2026-08-17T16:20:59Z
+
+Context: giống scenario-b-user-to-order-allow.txt — Istio đã cài,
+mTLS STRICT + 3 AuthorizationPolicy đã áp cho namespace crm. Cùng phương
+pháp đo với GĐ3: POST tới endpoint giả lập "user-service bị compromise"
+trên chính user-service; user-service tự gọi HTTP nội bộ sang
+admin-service (ngoài phạm vi nghiệp vụ của nó — mô phỏng lateral
+movement từ Vector 2, THREAT_MODEL.md), forward nguyên status/body nhận
+được về response này.
+
+## Command
+
+```
+$ kubectl -n crm exec curltest -- curl -s -i -X POST http://user-service.crm.svc.cluster.local/simulate/call-admin
+```
+
+## Full response (headers + body)
+
+```
+HTTP/1.1 403 Forbidden
+x-powered-by: Express
+content-type: text/plain; charset=utf-8
+content-length: 19
+etag: W/"13-zC72N2MzzftOGCEGibT/rk/WDDk"
+date: Mon, 17 Aug 2026 16:20:59 GMT
+x-envoy-upstream-service-time: 11
+server: envoy
+
+RBAC: access denied
+```
+
+=> Mã HTTP thực tế: **403**, message: **"RBAC: access denied"** — đúng mã
+lỗi Istio RBAC deny thực tế (không phải app admin-service trả về, đây là
+Envoy sidecar của admin-service chặn trước khi request chạm tới app —
+xác nhận bằng access log dưới).
+
+## Đối chiếu độc lập — admin-service istio-proxy (Envoy) access log
+
+```
+[2026-08-17T16:20:59.876Z] "GET /admin HTTP/1.1" 403 - rbac_access_denied_matched_policy[none]
+- "-" 0 19 0 - "-" "node" "a197296e-e639-9e2c-9b1d-24654863169f"
+"admin-service.crm.svc.cluster.local" "-" inbound|3000|| -
+10.244.0.24:3000 10.244.0.22:44542 outbound_.80_._.admin-service.crm.svc.cluster.local default
+```
+
+=> `rbac_access_denied_matched_policy[none]`: không có AuthorizationPolicy
+ALLOW nào khớp cho request này tới admin-service — đúng thiết kế:
+restrict-admin-service (rules: []) không bao giờ match ai;
+allow-pomerium-ingress-to-admin chỉ match principal
+`cluster.local/ns/gateway/sa/pomerium`, không match
+`cluster.local/ns/crm/sa/user-service`. Source IP 10.244.0.22 là IP pod
+user-service — xác nhận đúng request test.
+
+## So sánh với BEFORE (GĐ3, chưa cài Istio)
+
+| | BEFORE (GĐ3) | AFTER (GĐ5) |
+|---|---|---|
+| user-service -> admin-service | 200 ALLOWED (lateral movement thành công) | 403 DENIED (RBAC: access denied) |
+
+## Kết quả
+
+Kỳ vọng: DENIED (~403), chặn bởi AuthorizationPolicy. Thực tế: **403
+DENIED**, message "RBAC: access denied". PASS — lateral movement từ
+Vector 2 (Workload compromise) đã bị chặn đúng thiết kế.

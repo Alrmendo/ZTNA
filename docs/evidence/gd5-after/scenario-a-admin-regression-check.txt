@@ -1,0 +1,108 @@
+# Scenario A (North-South) — REGRESSION CHECK sau khi bật Istio mTLS
+# STRICT + AuthorizationPolicy ở GĐ5 — admin-user -> /admin qua Pomerium
+
+Timestamp (UTC): 2026-08-17T16:17:42Z
+
+## Vì sao cần test này
+
+GĐ5 bật PeerAuthentication STRICT cho toàn namespace crm và áp
+AuthorizationPolicy restrict-admin-service (action: ALLOW, rules: [] —
+deny-all cho mọi service-to-service traffic tới admin-service). Đây là
+rủi ro thực tế đã lường trước: Pomerium gọi admin-service qua
+`http://admin-service.crm.svc.cluster.local` — nếu không xử lý, request
+này sẽ bị vỡ bởi chính 2 cơ chế mới của GĐ5, phá hỏng kết quả PASS đã có
+ở GĐ4 cho Scenario A / Admin -> ALLOWED.
+
+## Sự cố gặp phải và cách khắc phục (tóm tắt — chi tiết đầy đủ ở docs/NOTES.md)
+
+1. **mTLS STRICT chặn Pomerium** vì Pomerium không nằm trong mesh (không
+   có identity mTLS). Khắc phục: đưa Pomerium vào mesh — tạo
+   ServiceAccount `pomerium` riêng trong namespace `gateway`, bật
+   `istio-injection=enabled` cho namespace `gateway`, rollout restart.
+2. Sau khi có sidecar, cổng 8080 của Pomerium (đặt tên "http" nhưng thực
+   chất phục vụ TLS do Pomerium tự terminate bằng cert riêng) bị Envoy
+   hiểu nhầm là HTTP thuần, gây "filter_chain_not_found" / reset kết nối
+   khi client thật (ngoài mesh) gửi TLS Client Hello vào. Khắc phục: đổi
+   tên port thành "https" VÀ loại port 8080 khỏi INBOUND interception của
+   sidecar bằng annotation `traffic.sidecar.istio.io/excludeInboundPorts:
+   "8080"` — biên TLS North-South (Pomerium tự terminate) tách biệt khỏi
+   mTLS East-West nội bộ mesh; OUTBOUND (Pomerium -> admin-service) vẫn
+   bị sidecar bắt bình thường để tự động mTLS.
+3. **restrict-admin-service (rules: []) là deny-all tuyệt đối**, chặn
+   luôn cả Pomerium dù đã vào mesh, vì AuthorizationPolicy không phân
+   biệt được "North-South hợp lệ qua gateway" với "East-West trái phép".
+   Khắc phục: KHÔNG sửa restrict-admin-service (giữ nguyên rules: [] như
+   PLAN.md, vẫn chặn tuyệt đối user-service -> admin-service) — thêm 1
+   AuthorizationPolicy MỚI, tách biệt: `allow-pomerium-ingress-to-admin`,
+   ALLOW đúng 1 principal `cluster.local/ns/gateway/sa/pomerium` và đúng
+   1 path `/admin`. Nhiều policy ALLOW cho cùng selector được OR với
+   nhau trong Istio, nên đây là bổ sung least-privilege, không phải nới
+   lỏng rules: [] thành allow-all.
+
+## Cách test (giữ nguyên phương pháp GĐ4 — automate OIDC Authorization
+## Code flow bằng curl từ pod debug trong namespace gateway)
+
+```
+$ kubectl exec -n gateway curltest -- sh /tmp/oidc-login.sh admin-user 'AdminPass123!'
+```
+
+## Status code qua từng hop (curl -L, cùng 1 lệnh)
+
+```
+HTTP/1.1 302 Found   <- Keycloak: login thành công, redirect kèm auth code
+HTTP/2 302           <- Pomerium /oauth2/callback: đổi code lấy token, set session, redirect
+HTTP/2 302           <- Pomerium /.pomerium/callback/ (route domain, set cookie route-scope)
+HTTP/2 200           <- Route /admin: PASS qua policy (role=admin) + qua Istio mTLS/AuthorizationPolicy
+```
+
+## Response cuối cùng (từ route /admin, đã qua cả Pomerium lẫn Istio)
+
+```
+HTTP/2 200
+x-powered-by: Express
+content-type: application/json; charset=utf-8
+content-length: 45
+etag: W/"2d-UqABvjsd7tVHzgb9uOiYTC1TN3c"
+date: Mon, 17 Aug 2026 16:17:42 GMT
+x-envoy-upstream-service-time: 16
+server: envoy
+
+{"panel":"admin","users":42,"revenue":123456}
+```
+
+## Đối chiếu độc lập 1 — Pomerium authorize log (North-South, không đổi so với GĐ4)
+
+```
+{"level":"info","service":"authorize","path":"/admin","host":"admin.gateway.svc.cluster.local:8080",
+ "session-id":"c92dddc7-c606-e036-39d1-3dc56120fa18",
+ "user":"7cbc569a-d712-4173-92c9-2d7c337fd159",
+ "email":"admin-user@ztna-lab.local",
+ "allow":true,"allow-why-true":["claim-ok"],
+ "deny":false,"deny-why-false":[],
+ "time":"2026-08-17T16:17:42Z","message":"authorize check"}
+```
+
+## Đối chiếu độc lập 2 — admin-service istio-proxy (Envoy) access log (East-West, MỚI ở GĐ5)
+
+```
+[2026-08-17T16:17:42.049Z] "GET /admin HTTP/1.1" 200 - via_upstream - "-" 0 45 2 2
+"10.244.0.27" "curl/8.21.0" "a5ca9f3d-286e-9353-ac36-5cf7d0662a5d"
+"admin-service.crm.svc.cluster.local" "10.244.0.24:3000" inbound|3000||
+127.0.0.6:52679 10.244.0.24:3000 10.244.0.27:0
+outbound_.80_._.admin-service.crm.svc.cluster.local default
+```
+
+=> Request tới admin-service's sidecar là "200 - via_upstream" (không
+phải "rbac_access_denied") — chứng minh request từ Pomerium đi qua mTLS
+STRICT + AuthorizationPolicy của admin-service THÀNH CÔNG, khớp đúng
+policy allow-pomerium-ingress-to-admin (đây là ALLOW policy DUY NHẤT có
+rule khớp cho admin-service khi nguồn là principal
+cluster.local/ns/gateway/sa/pomerium — restrict-admin-service không bao
+giờ match vì rules: []).
+
+## Kết quả
+
+Kỳ vọng: Scenario A / Admin -> /admin vẫn ALLOWED (~200) sau GĐ5, không
+bị phá bởi mTLS STRICT/AuthorizationPolicy mới. Thực tế: **200 ALLOWED**,
+2 nguồn bằng chứng độc lập (Pomerium log + Istio/Envoy log) đều xác nhận.
+REGRESSION CHECK: PASS.

@@ -1,0 +1,11 @@
+# mTLS STRICT cho toàn bộ namespace crm — theo PLAN.md mục 4 (GĐ5).
+# Mọi pod trong crm (đã có sidecar istio-proxy sau GĐ5 bước 2) chỉ chấp
+# nhận traffic mTLS, không nhận plaintext trực tiếp tới port ứng dụng.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: crm
+spec:
+  mtls:
+    mode: STRICT

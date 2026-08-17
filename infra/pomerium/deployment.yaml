@@ -1,3 +1,12 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pomerium
+---
+# GĐ5: Pomerium tham gia Istio mesh (sidecar injection bật qua label
+# istio-injection=enabled trên namespace "gateway") để có identity mTLS
+# (cluster.local/ns/gateway/sa/pomerium) khi gọi admin-service — bắt buộc
+# vì admin-service giờ áp PeerAuthentication STRICT. Xem docs/NOTES.md.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,7 +22,18 @@ spec:
     metadata:
       labels:
         app: pomerium
+      annotations:
+        # Pomerium tự terminate TLS trên port 8080 bằng cert riêng
+        # (tls-lab-only/) — đây là biên North-South (ZTNA gateway ingress),
+        # không phải mTLS East-West nội bộ mesh. Loại port này khỏi
+        # interception INBOUND của sidecar để tránh Envoy cố xử lý byte
+        # TLS của Pomerium như traffic mesh (gây "filter_chain_not_found"/
+        # reset kết nối — phát hiện khi regression-test GD5 bước 5).
+        # OUTBOUND (Pomerium -> admin-service) vẫn bị sidecar bắt bình
+        # thường để tự động mTLS, đúng mục đích đưa Pomerium vào mesh.
+        traffic.sidecar.istio.io/excludeInboundPorts: "8080"
     spec:
+      serviceAccountName: pomerium
       containers:
         - name: pomerium
           image: pomerium/pomerium:latest
@@ -22,7 +42,7 @@ spec:
             - secretRef:
                 name: pomerium-secrets
           ports:
-            - name: http
+            - name: https
               containerPort: 8080
           readinessProbe:
             tcpSocket:
@@ -61,7 +81,7 @@ spec:
   selector:
     app: pomerium
   ports:
-    - name: http
+    - name: https
       port: 8080
       targetPort: 8080
 ---
@@ -78,6 +98,6 @@ spec:
   selector:
     app: pomerium
   ports:
-    - name: http
+    - name: https
       port: 8080
       targetPort: 8080
